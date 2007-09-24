@@ -46,15 +46,15 @@
   (defmethod negate ((x b)))
   (defmethod multiply ((x b) y)))
 
-(print (conforms-to-p 'b 'additive))
-(print (really-conforms-to-p 'b 'additive))
-(print (conforms-to-p 'b 'multiplicative))
-(print (really-conforms-to-p 'b 'multiplicative))
-(print (conforms-to-p 'b 'printable))
-(print (really-conforms-to-p 'b 'printable))
+(print (conforms-to-p 'b 'additive))              ;=> T
+(print (really-conforms-to-p 'b 'additive))       ;=> T
+(print (conforms-to-p 'b 'multiplicative))        ;=> T
+(print (really-conforms-to-p 'b 'multiplicative)) ;=> NIL
+(print (conforms-to-p 'b 'printable))             ;=> NIL
+(print (really-conforms-to-p 'b 'printable))      ;=> NIL
 
 ;; The following works because PRINT-OBJECT is specialised over T.
 (implement-protocols b (printable))
 
-(print (conforms-to-p 'b 'printable))
-(print (really-conforms-to-p 'b 'printable))
+(print (conforms-to-p 'b 'printable))             ;=> T
+(print (really-conforms-to-p 'b 'printable))      ;=> T
