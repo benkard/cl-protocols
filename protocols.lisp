@@ -1,9 +1,6 @@
 (in-package #:mulk.protocols)
 
 
-(declaim (optimize debug safety (speed 0) (space 0)))
-
-
 (defvar *protocols* (make-hash-table))
 
 
@@ -26,7 +23,10 @@
         (real-protocol (typecase protocol
                          (symbol (find-protocol protocol))
                          (t protocol))))
-    (%conforms-to-p real-class real-protocol)))
+    (or (%conforms-to-p real-class real-protocol)
+        (some #'(lambda (superclass)
+                  (conforms-to-p superclass real-protocol))
+              (class-direct-superclasses real-class)))))
 
 
 (defun really-conforms-to-p (class protocol)
@@ -36,7 +36,10 @@
         (real-protocol (typecase protocol
                          (symbol (find-protocol protocol))
                          (t protocol))))
-    (%really-conforms-to-p real-class real-protocol)))
+    (or (%really-conforms-to-p real-class real-protocol)
+        (some #'(lambda (superclass)
+                  (really-conforms-to-p superclass real-protocol))
+              (class-direct-superclasses real-class)))))
 
 
 (defgeneric %conforms-to-p (class protocol))
@@ -88,8 +91,12 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
     (format stream "PROTOCOL ~A" (protocol-name protocol))))
 
 
-(defun ensure-conformance (class-name protocol-name)
-  (let ((protocol (find-protocol protocol-name)))
+(defun ensure-conformance (class-name protocol-designator)
+  (let* ((protocol (typecase protocol-designator
+                     (symbol (find-protocol protocol-designator))
+                     (t protocol-designator)))
+         (protocol-name (protocol-name protocol))
+         (conforming-p nil))
     (with-slots (name superprotocols methods options)
         protocol
       (loop for method in methods
@@ -112,20 +119,29 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
                                                         (first method)
                                                         real-argument-class-list
                                                         (protocol-name protocol))))
-            finally (return (null missing-methods))))))
+            finally (setq conforming-p (null missing-methods)))
+      (let ((really-conforming-p
+             (and conforming-p
+                  (every #'identity
+                         ;; We have to use MAPCAR because we
+                         ;; don't want short-circuiting.
+                         (mapcar #'(lambda (superprotocol)
+                                     (ensure-conformance class-name
+                                                         superprotocol))
+                                 superprotocols)))))
+        (ensure-method #'%conforms-to-p
+                       '(lambda (x y) t)
+                       :specializers (list (intern-eql-specializer (find-class class-name))
+                                           (intern-eql-specializer (find-protocol protocol-name))))
+        (ensure-method #'%really-conforms-to-p
+                       `(lambda (x y) ,really-conforming-p)
+                       :specializers (list (intern-eql-specializer (find-class class-name))
+                                           (intern-eql-specializer (find-protocol protocol-name))))))))
 
 
 (defmacro implement-protocols (class protocols &body definitions)
   `(progn
      ,@definitions
-     ,@(mapcan #'(lambda (protocol)
-                   `((let ((conformance (ensure-conformance ',class ',protocol)))
-                       (defmethod %really-conforms-to-p
-                           ((class (eql (find-class ',class)))
-                            (protocol (eql (find-protocol ',protocol))))
-                         conformance))
-                     (defmethod %conforms-to-p
-                         ((class (eql (find-class ',class)))
-                          (protocol (eql (find-protocol ',protocol))))
-                       t)))
+     ,@(mapcar #'(lambda (protocol)
+                   `(ensure-conformance ',class ',protocol))
                protocols)))

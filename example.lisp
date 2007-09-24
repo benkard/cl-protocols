@@ -31,22 +31,30 @@
 (defgeneric multiply (x stream))
 (defgeneric invert (x))
 
+
 (defclass a () ())
 
-;; Note the style warnings signalled by the following.
-(implement-protocols a (additive multiplicative serialisable)
-  (defmethod add ((x a) (y a)))
-  (defmethod negate ((x a)))
-  (defmethod multiply ((x a) y)))
+;; The following should signal five style warnings about missing methods.
+(implement-protocols a (serialisable-field))
 
-(print (conforms-to-p 'a 'additive))
-(print (really-conforms-to-p 'a 'additive))
-(print (conforms-to-p 'a 'multiplicative))
-(print (really-conforms-to-p 'a 'multiplicative))
-(print (conforms-to-p 'a 'printable))
-(print (really-conforms-to-p 'a 'printable))
 
-(implement-protocols a (printable))
+(defclass b () ())
 
-(print (conforms-to-p 'a 'printable))
-(print (really-conforms-to-p 'a 'printable))
+;; Note the two style warnings signalled by the following.
+(implement-protocols b (additive multiplicative serialisable)
+  (defmethod add ((x b) (y b)))
+  (defmethod negate ((x b)))
+  (defmethod multiply ((x b) y)))
+
+(print (conforms-to-p 'b 'additive))
+(print (really-conforms-to-p 'b 'additive))
+(print (conforms-to-p 'b 'multiplicative))
+(print (really-conforms-to-p 'b 'multiplicative))
+(print (conforms-to-p 'b 'printable))
+(print (really-conforms-to-p 'b 'printable))
+
+;; The following works because PRINT-OBJECT is specialised over T.
+(implement-protocols b (printable))
+
+(print (conforms-to-p 'b 'printable))
+(print (really-conforms-to-p 'b 'printable))
