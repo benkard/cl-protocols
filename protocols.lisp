@@ -17,43 +17,43 @@
   (class-name protocol))
 
 
+(defvar *alleged-conformance* (make-hash-table :test 'equal))
+(defvar *actual-conformance* (make-hash-table :test 'equal))
+
+
 (defun conforms-to-p (class protocol)
-  (let ((real-class (typecase class
-                      (symbol (find-class class))
-                      (t class)))
-        (real-protocol (typecase protocol
-                         (symbol (find-protocol protocol))
-                         (t protocol))))
-    (or (%conforms-to-p real-class real-protocol)
-        (some #'(lambda (superclass)
-                  (conforms-to-p superclass real-protocol))
-              (class-direct-superclasses real-class)))))
+  (let ((class (etypecase class
+                 (class class)
+                 (symbol (find-class class))))
+        (protocol (etypecase protocol
+                    (protocol protocol)
+                    (symbol (find-protocol protocol)))))
+    (or (gethash (cons class protocol) *alleged-conformance* nil)
+        (some #'(lambda (x) (conforms-to-p x protocol))
+              (class-direct-superclasses class)))))
 
 
 (defun really-conforms-to-p (class protocol)
-  (let ((real-class (typecase class
-                      (symbol (find-class class))
-                      (t class)))
-        (real-protocol (typecase protocol
-                         (symbol (find-protocol protocol))
-                         (t protocol))))
-    (or (%really-conforms-to-p real-class real-protocol)
-        (some #'(lambda (superclass)
-                  (really-conforms-to-p superclass real-protocol))
-              (class-direct-superclasses real-class)))))
+  (let ((class (etypecase class
+                 (class class)
+                 (symbol (find-class class))))
+        (protocol (etypecase protocol
+                    (protocol protocol)
+                    (symbol (find-protocol protocol)))))
+    (or (gethash (cons class protocol) *actual-conformance* nil)
+        (some #'(lambda (x) (really-conforms-to-p x protocol))
+              (class-direct-superclasses class)))))
 
 
 (defgeneric %conforms-to-p (class protocol))
 
 (defmethod %conforms-to-p ((class t) (protocol t))
-  (declare (ignore class protocol))
   nil)
 
 
 (defgeneric %really-conforms-to-p (class protocol))
 
 (defmethod %really-conforms-to-p ((class t) (protocol t))
-  (declare (ignore class protocol))
   nil)
 
 
@@ -70,13 +70,17 @@
   t)
 
 
+(defmethod validate-superclass ((class protocol) (superclass standard-class))
+  t)
+
+
 (defmacro define-protocol (name superprotocols methods &rest options)
   "Define a new protocol.
 
 superprotocols ::= (*name*\\*)
 
 methods ::= ((method-name [\\* | class-name]\\*)\\*)"
-  `(defclass ,name ,(or superprotocols '(t))
+  `(defclass ,name ,superprotocols
         ()
      (:metaclass protocol)
      (:methods ,@methods)
@@ -87,7 +91,6 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
   (let* ((protocol (typecase protocol-designator
                      (symbol (find-protocol protocol-designator))
                      (t protocol-designator)))
-         (protocol-name (protocol-name protocol))
          (conforming-p nil))
     (with-accessors ((name protocol-name)
                      (superprotocols class-direct-superclasses)
@@ -140,24 +143,37 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
                                          (ensure-conformance class-name
                                                              superprotocol)))
                                  superprotocols)))))
-        (ensure-method #'%conforms-to-p
-                       '(lambda (x y) t)
-                       :specializers (list (intern-eql-specializer (find-class class-name))
-                                           (intern-eql-specializer (find-protocol protocol-name))))
-        (ensure-method #'%really-conforms-to-p
-                       `(lambda (x y) ,really-conforming-p)
-                       :specializers (list (intern-eql-specializer (find-class class-name))
-                                           (intern-eql-specializer (find-protocol protocol-name))))
+        (setf (gethash (cons (find-class class-name) protocol)
+                       *alleged-conformance*)
+              t)
+        (setf (gethash (cons (find-class class-name) protocol)
+                       *actual-conformance*)
+              really-conforming-p)
         (let ((original-class (find-class class-name)))
           (unless (subtypep original-class protocol)
-            (let ((new-class-name (gensym (symbol-name class-name))))
-              (setf (class-name original-class) new-class-name)
-              (setf (find-class new-class-name) original-class)
-              (setf (find-class class-name)
-                    (ensure-class
-                         class-name
-                         :direct-superclasses (list original-class protocol)
-                         :metaclass (class-of original-class))))))))))
+            (handler-case
+                (let* ((new-class-name (gensym (symbol-name class-name)))
+                       (temporary-class-name (gensym (symbol-name class-name)))
+                       (new-class
+                        (ensure-class
+                             temporary-class-name
+                             :direct-superclasses (list original-class protocol)
+                             :metaclass (class-of original-class))))
+                  (setf (class-name original-class) new-class-name)
+                  (setf (class-name new-class) class-name)
+                  (setf (find-class new-class-name) original-class)
+                  (setf (find-class class-name) new-class))
+              (serious-condition ()
+                  (warn (make-condition
+                             'simple-style-warning
+                             :format-control "Could not add protocol ~A ~
+                                              as a superclass of ~A. ~
+                                              Most probably, the metaclasses ~
+                                              are incompatible.  (See the MOP ~
+                                              specification, specifically the ~
+                                              part about VALIDATE-SUPERCLASS.)"
+                             :format-arguments (list protocol
+                                                     original-class)))))))))))
 
 
 (defmacro implement-protocols (class protocols &body definitions)
