@@ -1,6 +1,6 @@
 (defpackage #:mulk.protocols
   (:nicknames #:protocols)
-  (:use #:cl #:c2mop)
+  (:use #:closer-common-lisp)
   (:export #:define-protocol
            #:implement-protocols
            #:conforms-to-p

@@ -5,15 +5,16 @@
 
 
 (defun find-protocol (name &optional (errorp t))
-  (let ((protocol (gethash name *protocols* nil)))
-    (when (and errorp (null protocol))
-      (error "There is no protocol named ~A." name))
-    protocol))
+  (find-class name errorp))
 
 
 (defun (setf find-protocol) (protocol name &optional errorp)
   (declare (ignore errorp))
-  (setf (gethash name *protocols*) protocol))
+  (setf (find-class name) protocol))
+
+
+(defun protocol-name (protocol)
+  (class-name protocol))
 
 
 (defun conforms-to-p (class protocol)
@@ -56,15 +57,17 @@
   nil)
 
 
-(defclass protocol ()
-  ((name :initarg :name
-         :reader protocol-name)
-   (superprotocols :initarg :superprotocols
-                   :reader protocol-superprotocols)
-   (methods :initarg :methods
-            :reader protocol-methods)
-   (options :initarg :options
-            :reader protocol-options)))
+(defclass protocol (standard-class)
+  ((methods :initarg :methods
+            :reader protocol-methods)))
+
+
+(defmethod validate-superclass (class (superclass protocol))
+  t)
+
+
+(defmethod validate-superclass ((class standard-class) (superclass protocol))
+  t)
 
 
 (defmacro define-protocol (name superprotocols methods &rest options)
@@ -73,22 +76,11 @@
 superprotocols ::= (*name*\\*)
 
 methods ::= ((method-name [\\* | class-name]\\*)\\*)"
-  `(progn
-     (when (find-protocol ',name nil)
-       (warn (make-condition 'simple-style-warning
-                             :format-control "Redefining protocol ~A."
-                             :format-arguments (list ',name))))
-     (setf (find-protocol ',name)
-           (make-instance 'protocol
-              :name ',name
-              :superprotocols (mapcar #'find-protocol ',superprotocols)
-              :methods ',methods
-              :options ',options))))
-
-
-(defmethod print-object ((protocol protocol) stream)
-  (print-unreadable-object (protocol stream)
-    (format stream "PROTOCOL ~A" (protocol-name protocol))))
+  `(defclass ,name ,(or superprotocols '(t))
+        ()
+     (:metaclass protocol)
+     (:methods ,@methods)
+     ,@options))
 
 
 (defun ensure-conformance (class-name protocol-designator)
@@ -97,7 +89,9 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
                      (t protocol-designator)))
          (protocol-name (protocol-name protocol))
          (conforming-p nil))
-    (with-slots (name superprotocols methods options)
+    (with-accessors ((name protocol-name)
+                     (superprotocols class-direct-superclasses)
+                     (methods protocol-methods))
         protocol
       (loop for method in methods
             for (name . raw-argument-class-list) = method
@@ -142,8 +136,9 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
                          ;; We have to use MAPCAR because we
                          ;; don't want short-circuiting.
                          (mapcar #'(lambda (superprotocol)
-                                     (ensure-conformance class-name
-                                                         superprotocol))
+                                     (or (not (typep superprotocol 'protocol))
+                                         (ensure-conformance class-name
+                                                             superprotocol)))
                                  superprotocols)))))
         (ensure-method #'%conforms-to-p
                        '(lambda (x y) t)
@@ -152,7 +147,17 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
         (ensure-method #'%really-conforms-to-p
                        `(lambda (x y) ,really-conforming-p)
                        :specializers (list (intern-eql-specializer (find-class class-name))
-                                           (intern-eql-specializer (find-protocol protocol-name))))))))
+                                           (intern-eql-specializer (find-protocol protocol-name))))
+        (let ((original-class (find-class class-name)))
+          (unless (subtypep original-class protocol)
+            (let ((new-class-name (gensym (symbol-name class-name))))
+              (setf (class-name original-class) new-class-name)
+              (setf (find-class new-class-name) original-class)
+              (setf (find-class class-name)
+                    (ensure-class
+                         class-name
+                         :direct-superclasses (list original-class protocol)
+                         :metaclass (class-of original-class))))))))))
 
 
 (defmacro implement-protocols (class protocols &body definitions)
