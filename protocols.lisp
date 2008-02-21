@@ -86,6 +86,7 @@
 
 
 (defmethod validate-superclass (class (superclass protocol))
+  (declare (ignore class))
   t)
 
 
