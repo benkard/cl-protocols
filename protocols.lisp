@@ -106,19 +106,35 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
                                                   raw-argument-class-list)
             for real-argument-class-list = (mapcar #'find-class
                                                    argument-class-list)
-            when (null (funcall #'compute-applicable-methods-using-classes
-                                (fdefinition name)
-                                real-argument-class-list))
+            for (applicable-methods methods-determinable-p) =
+                (multiple-value-list
+                 (funcall #'compute-applicable-methods-using-classes
+                          (fdefinition name)
+                          real-argument-class-list))
+            when (and methods-determinable-p (null applicable-methods))
               collect method into missing-methods
               and do (warn (make-condition 'simple-style-warning
-                                :format-control "Class ~A does not implement ~
-                                                 method ~A with argument types ~
+                                :format-control "Class ~A does not ~
+                                                 implement method ~A ~
+                                                 with argument types ~
                                                  ~A as required by ~
                                                  protocol ~A."
                                 :format-arguments (list class-name
                                                         (first method)
                                                         real-argument-class-list
                                                         (protocol-name protocol))))
+            unless methods-determinable-p
+              do (warn (make-condition 'simple-style-warning
+                            :format-control "Could not check whether ~
+                                             class ~A implements ~
+                                             method ~A with argument ~
+                                             types ~A as required by ~
+                                             protocol ~A.  Assuming it ~
+                                             does."
+                            :format-arguments (list class-name
+                                                    (first method)
+                                                    real-argument-class-list
+                                                    (protocol-name protocol))))
             finally (setq conforming-p (null missing-methods)))
       (let ((really-conforming-p
              (and conforming-p
