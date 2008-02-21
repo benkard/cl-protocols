@@ -7,10 +7,12 @@
 
 
 (define-protocol printable ()
-  ((print-object * stream)))
+  ((print-object * stream))
+  (:strictness t))
 
 (define-protocol serialisable ()
-  ((serialise * stream)))
+  ((serialise * stream))
+  (:strictness t))
 
 (define-protocol additive ()
   ((add * *)
@@ -58,3 +60,7 @@
 
 (print (conforms-to-p 'b 'printable))             ;=> T
 (print (really-conforms-to-p 'b 'printable))      ;=> T
+
+(print (subtypep 'b 'printable))                  ;=> T
+(print (subtypep 'b 'additive))                   ;=> T
+(print (subtypep 'b 'serialisable))               ;=> NIL

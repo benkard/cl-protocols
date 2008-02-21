@@ -4,6 +4,15 @@
 (defvar *protocols* (make-hash-table))
 
 
+(defclass protocol (standard-class)
+  ((methods :initarg :methods
+            :reader protocol-methods)
+   (strictness :initarg :strictness
+               :reader protocol-strictness
+               :initform '(nil)
+               :documentation "Only tag classes with this protocol if they actually (rather than allegedly) conform to it.")))
+
+
 (defun find-protocol (name &optional (errorp t))
   (find-class name errorp))
 
@@ -57,9 +66,23 @@
   nil)
 
 
-(defclass protocol (standard-class)
-  ((methods :initarg :methods
-            :reader protocol-methods)))
+(defmethod initialize-instance :around ((protocol protocol)
+                                        &rest initargs
+                                        &key (strictness
+                                              '(nil)
+                                              strictness-supplied-p)
+                                             direct-superclasses
+                                        &allow-other-keys)
+  (declare (ignore strictness))
+  (let ((new-initargs (copy-list initargs)))
+    (unless strictness-supplied-p
+      (setf (getf new-initargs :strictness)
+            (list (some #'protocol-strictp direct-superclasses))))
+    (apply #'call-next-method protocol new-initargs)))
+
+
+(defun protocol-strictp (protocol)
+  (car (protocol-strictness protocol)))
 
 
 (defmethod validate-superclass (class (superclass protocol))
@@ -150,7 +173,9 @@ methods ::= ((method-name [\\* | class-name]\\*)\\*)"
                        *actual-conformance*)
               really-conforming-p)
         (let ((original-class (find-class class-name)))
-          (unless (subtypep original-class protocol)
+          (unless (or (subtypep original-class protocol)
+                      (and (not really-conforming-p)
+                           (protocol-strictp protocol)))
             (handler-case
                 (let* ((new-class-name (gensym (symbol-name class-name)))
                        (temporary-class-name (gensym (symbol-name class-name)))
