@@ -64,3 +64,11 @@
 (print (subtypep 'b 'printable))                  ;=> T
 (print (subtypep 'b 'additive))                   ;=> T
 (print (subtypep 'b 'serialisable))               ;=> NIL
+
+;; Protocols by default inherit their direct ancestors' strictness,
+;; where NIL is recessive, while T is dominant.  In any case, a
+;; strictness default can be overridden by providing the :STRICTNESS
+;; option explicitely.
+(print (subtypep 'a 'field))                      ;=> T
+(print (subtypep 'a 'serialisable))               ;=> NIL
+(print (subtypep 'a 'serialisable-field))         ;=> NIL
